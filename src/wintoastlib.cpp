@@ -72,7 +72,7 @@ namespace DllImporter {
     }
 
     template<typename T>
-    inline HRESULT Wrap_GetActivationFactory(_In_ HSTRING activatableClassId, _Inout_ Details::ComPtrRef<T> factory) throw() {
+    inline HRESULT Wrap_GetActivationFactory(_In_ HSTRING activatableClassId, _Inout_ Microsoft::WRL::Details::ComPtrRef<T> factory) throw() {
         return _1_GetActivationFactory(activatableClassId, factory.ReleaseAndGetAddressOf());
     }
 
@@ -331,6 +331,34 @@ namespace Util {
             }
         }
         return hr;
+    }
+
+    /*!
+     * Create an XML Document from string.
+     *
+     * @param[in]   xmlString   Input string with XML code.
+     * @param[out]  doc         Pointer to IXmlDocument which will be filled with xmlString.
+     *
+     * @return  A [HRESULT](https://msdn.microsoft.com/en-us/library/windows/desktop/aa378137(v=vs.85).aspx)
+     *          with result value of the function. Use
+     *          [SUCCEEDED()](https://msdn.microsoft.com/en-us/library/windows/desktop/ms687197(v=vs.85).aspx) and
+     *          [FAILED()](https://msdn.microsoft.com/en-us/library/windows/desktop/ms693474(v=vs.85).aspx) macros.
+     */
+    inline HRESULT createDocumentFromString(const wchar_t *xmlString, IXmlDocument **doc) {
+        ComPtr<IXmlDocument> answer;
+
+        HRESULT hr = Windows::Foundation::ActivateInstance(HStringReference(RuntimeClass_Windows_Data_Xml_Dom_XmlDocument).Get(), &answer);
+        if (SUCCEEDED(hr)) {
+            ComPtr<IXmlDocumentIO> docIO;
+            hr = answer.As(&docIO);
+            if (SUCCEEDED(hr)) {
+                hr = docIO->LoadXml(HStringReference(xmlString).Get());
+                if (SUCCEEDED(hr)) {
+                    return answer.CopyTo(doc);
+                }
+            }
+        }
+        return E_FAIL;
     }
 }
 
@@ -602,8 +630,17 @@ INT64 WinToast::showToast(_In_ const WinToastTemplate& toast, _In_  IWinToastHan
             hr = DllImporter::Wrap_GetActivationFactory(WinToastStringWrapper(RuntimeClass_Windows_UI_Notifications_ToastNotification).Get(), &notificationFactory);
             if (SUCCEEDED(hr)) {
 				ComPtr<IXmlDocument> xmlDocument;
-				HRESULT hr = notificationManager->GetTemplateContent(ToastTemplateType(toast.type()), &xmlDocument);
+
+                HRESULT hr = notificationManager->GetTemplateContent(ToastTemplateType(toast.type()), &xmlDocument);
+
+                // https://docs.microsoft.com/en-us/windows/uwp/design/shell/tiles-and-notifications/send-local-toast-desktop-cpp-wrl#step-7-send-a-notification
+                if (toast.type() == WinToastTemplate::WinToastTemplateType::Generic) {
+                    hr = Util::createDocumentFromString(L"<toast><visual><binding template='ToastGeneric'><text id='1'></text><text id='2'></text><text id='3'></text></binding></visual></toast>", &xmlDocument);
+                    DEBUG_MSG("GenericXml: " << Util::AsString(xmlDocument));
+                }
+
                 if (SUCCEEDED(hr)) {
+
                     const int fieldsCount = toast.textFieldsCount();
                     for (int i = 0; i < fieldsCount && SUCCEEDED(hr); i++) {
                         hr = setTextFieldHelper(xmlDocument.Get(), toast.textField(WinToastTemplate::TextField(i)), i);
@@ -941,7 +978,7 @@ void WinToast::setError(_Out_ WinToastError* error, _In_ WinToastError value) {
 }
 
 WinToastTemplate::WinToastTemplate(_In_ WinToastTemplateType type) : _type(type) {
-    static const std::size_t TextFieldsCount[] = { 1, 2, 2, 3, 1, 2, 2, 3};
+    static const std::size_t TextFieldsCount[] = { 1, 2, 2, 3, 1, 2, 2, 3, 3};
     _textFields = std::vector<std::wstring>(TextFieldsCount[type], L"");
 }
 

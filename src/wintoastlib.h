@@ -18,7 +18,9 @@
 #include <string.h>
 #include <vector>
 #include <map>
+
 using namespace Microsoft::WRL;
+using namespace Microsoft::WRL::Wrappers; // For HStringReference
 using namespace ABI::Windows::Data::Xml::Dom;
 using namespace ABI::Windows::Foundation;
 using namespace ABI::Windows::UI::Notifications;
@@ -55,6 +57,7 @@ namespace WinToastLib {
             Text02 = ToastTemplateType::ToastTemplateType_ToastText02,
             Text03 = ToastTemplateType::ToastTemplateType_ToastText03,
             Text04 = ToastTemplateType::ToastTemplateType_ToastText04,
+            Generic,
             WinToastTemplateTypeCount
         };
 
