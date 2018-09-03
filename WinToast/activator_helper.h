@@ -1,81 +1,109 @@
-#define UNICODE //< This define is required for GetModuleFileName to work with wchar_t
-#include <Windows.h>
-#include <wrl.h>
-#include <string>
+// ******************************************************************
+// Copyright (c) Microsoft. All rights reserved.
+// This code is licensed under the MIT License (MIT).
+// THE CODE IS PROVIDED �AS IS�, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+// INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+// IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+// DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+// TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH
+// THE CODE OR THE USE OR OTHER DEALINGS IN THE CODE.
+// ******************************************************************
 
-/*!
- * A parameter application is run with when activated from notification
- */
+#pragma once
+#define UNICODE
+#include <string>
+#include <memory>
+#include <Windows.h>
+#include <windows.ui.notifications.h>
+#include <wrl.h>
 #define TOAST_ACTIVATED_LAUNCH_ARG L"-ToastActivated"
 
-/*!
- * Macro for checking return value of HRESULT type for failure.
- */
-#define RETURN_IF_FAILED(hr) do { HRESULT _hrTemp = hr; if (FAILED(_hrTemp)) { return _hrTemp; } } while (false)
+using namespace ABI::Windows::UI::Notifications;
 
-using namespace Microsoft::WRL;
-using namespace Microsoft::WRL::Wrappers;
+class DesktopNotificationHistoryCompat;
 
-// Following functions were taken from https://raw.githubusercontent.com/WindowsNotifications/desktop-toasts/master/CPP-WRL/DesktopToastsCppWrlApp/DesktopNotificationManagerCompat.cpp
-// mostly without any change.
-// In the future, they should be embeded into WinToastLib::Util namespace
+namespace DesktopNotificationManagerCompat
+{
+    /// <summary>
+    /// If not running under the Desktop Bridge, you must call this method to register your AUMID with the Compat library and to
+    /// register your COM CLSID and EXE in LocalServer32 registry. Feel free to call this regardless, and we will no-op if running
+    /// under Desktop Bridge. Call this upon application startup, before calling any other APIs.
+    /// </summary>
+    /// <param name="aumid">An AUMID that uniquely identifies your application.</param>
+    /// <param name="clsid">The CLSID of your NotificationActivator class.</param>
+    HRESULT RegisterAumidAndComServer(const wchar_t *aumid, GUID clsid);
 
-HRESULT RegisterComServer(GUID clsid, const wchar_t exePath[]) {
+    /// <summary>
+    /// Registers your module to handle COM activations. Call this upon application startup.
+    /// </summary>
+    HRESULT RegisterActivator();
 
-    // Turn the GUID into a string
-	OLECHAR* clsidOlechar;
-	StringFromCLSID(clsid, &clsidOlechar);
-	std::wstring clsidStr(clsidOlechar);
-	::CoTaskMemFree(clsidOlechar);
+    /// <summary>
+    /// Creates a toast notifier. You must have called RegisterActivator first (and also RegisterAumidAndComServer if you're a classic Win32 app), or this will throw an exception.
+    /// </summary>
+    HRESULT CreateToastNotifier(IToastNotifier** notifier);
 
-	// Create the subkey
-	// Something like SOFTWARE\Classes\CLSID\{23A5B06E-20BB-4E7E-A0AC-6982ED6A6041}\LocalServer32
-	std::wstring subKey = LR"(SOFTWARE\Classes\CLSID\)" + clsidStr + LR"(\LocalServer32)";
+    /// <summary>
+    /// Creates an XmlDocument initialized with the specified string. This is simply a convenience helper method.
+    /// </summary>
+    HRESULT CreateXmlDocumentFromString(const wchar_t *xmlString, ABI::Windows::Data::Xml::Dom::IXmlDocument** doc);
 
-	// Include -ToastActivated launch args on the exe
-	std::wstring exePathStr(exePath);
-	exePathStr = L"\"" + exePathStr + L"\" " + TOAST_ACTIVATED_LAUNCH_ARG;
+    /// <summary>
+    /// Creates a toast notification. This is simply a convenience helper method.
+    /// </summary>
+    HRESULT CreateToastNotification(ABI::Windows::Data::Xml::Dom::IXmlDocument* content, IToastNotification** notification);
 
-	// We don't need to worry about overflow here as ::GetModuleFileName won't
-	// return anything bigger than the max file system path (much fewer than max of DWORD).
-	DWORD dataSize = static_cast<DWORD>((exePathStr.length() + 1) * sizeof(WCHAR));
+    /// <summary>
+    /// Gets the DesktopNotificationHistoryCompat object. You must have called RegisterActivator first (and also RegisterAumidAndComServer if you're a classic Win32 app), or this will throw an exception.
+    /// </summary>
+    HRESULT get_History(std::unique_ptr<DesktopNotificationHistoryCompat>* history);
 
-	// Register the EXE for the COM server
-	return HRESULT_FROM_WIN32(::RegSetKeyValue(
-		HKEY_CURRENT_USER,
-		subKey.c_str(),
-		nullptr,
-		REG_SZ,
-		reinterpret_cast<const BYTE*>(exePathStr.c_str()),
-		dataSize));
+    /// <summary>
+    /// Gets a boolean representing whether http images can be used within toasts. This is true if running under Desktop Bridge.
+    /// </summary>
+    bool CanUseHttpImages();
 }
 
-HRESULT RegisterAumidAndComServer(const wchar_t *aumid, GUID clsid) {
-	
-	// Get the EXE path
-	wchar_t exePath[MAX_PATH];
-	DWORD charWritten = ::GetModuleFileName(nullptr, exePath, ARRAYSIZE(exePath));
-	RETURN_IF_FAILED(charWritten > 0 ? S_OK : HRESULT_FROM_WIN32(::GetLastError()));
+class DesktopNotificationHistoryCompat
+{
+public:
 
-	// Register the COM server
-	RETURN_IF_FAILED(RegisterComServer(clsid, exePath));
-	return S_OK;
-}
+    /// <summary>
+    /// Removes all notifications sent by this app from action center.
+    /// </summary>
+    HRESULT Clear();
 
-HRESULT RegisterActivator() {
-	// Module<OutOfProc> needs a callback registered before it can be used.
-	// Since we don't care about when it shuts down, we'll pass an empty lambda here.
-	Module<OutOfProc>::Create([] {});
+    /// <summary>
+    /// Gets all notifications sent by this app that are currently still in Action Center.
+    /// </summary>
+    HRESULT GetHistory(ABI::Windows::Foundation::Collections::IVectorView<ToastNotification*>** history);
 
-	// If a local server process only hosts the COM object then COM expects
-	// the COM server host to shutdown when the references drop to zero.
-	// Since the user might still be using the program after activating the notification,
-	// we don't want to shutdown immediately.  Incrementing the object count tells COM that
-	// we aren't done yet.
-	Module<OutOfProc>::GetModule().IncrementObjectCount();
+    /// <summary>
+    /// Removes an individual toast, with the specified tag label, from action center.
+    /// </summary>
+    /// <param name="tag">The tag label of the toast notification to be removed.</param>
+    HRESULT Remove(const wchar_t *tag);
 
-	RETURN_IF_FAILED(Module<OutOfProc>::GetModule().RegisterObjects());
+    /// <summary>
+    /// Removes a toast notification from the action using the notification's tag and group labels.
+    /// </summary>
+    /// <param name="tag">The tag label of the toast notification to be removed.</param>
+    /// <param name="group">The group label of the toast notification to be removed.</param>
+    HRESULT RemoveGroupedTag(const wchar_t *tag, const wchar_t *group);
 
-	return S_OK;
-}
+    /// <summary>
+    /// Removes a group of toast notifications, identified by the specified group label, from action center.
+    /// </summary>
+    /// <param name="group">The group label of the toast notifications to be removed.</param>
+    HRESULT RemoveGroup(const wchar_t *group);
 
+    /// <summary>
+    /// Do not call this. Instead, call DesktopNotificationManagerCompat.get_History() to obtain an instance.
+    /// </summary>
+    DesktopNotificationHistoryCompat(const wchar_t *aumid, Microsoft::WRL::ComPtr<IToastNotificationHistory> history);
+
+private:
+    std::wstring m_aumid;
+    Microsoft::WRL::ComPtr<IToastNotificationHistory> m_history = nullptr;
+};
