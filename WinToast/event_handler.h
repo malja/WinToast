@@ -2,6 +2,13 @@
 
 #include <iostream>
 
+/**
+ * This class handles events emited from notification before they are archived
+ * in Action Center.
+ * This means, `toastActivated` method is called only when user clicks on the
+ * notification during few seconds before it is moved to Action Center.
+ * From there, `Activator` class takes the role of Event handler.
+ */
 class EventHandler : public WinToastLib::IWinToastHandler {
 
     public:
