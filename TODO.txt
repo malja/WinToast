@@ -1,0 +1,1 @@
+- Find out, why notification does not popup. Maybe: https://docs.microsoft.com/en-us/windows/uwp/design/shell/tiles-and-notifications/send-local-toast-desktop-cpp-wrl#step-10-deploying-and-debugging helps.
